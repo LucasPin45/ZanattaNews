@@ -2,15 +2,28 @@ name: Telegram News Bot
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # A cada 15 minutos (UTC)
-    - cron: "0 23 * * *"     # Resumo diário às 20h BRT (23h UTC)
+    # Notícias a cada 15 minutos
+    - cron: "*/15 * * * *"
+    # Pauta da Câmara às 7h BRT (10h UTC)
+    - cron: "0 10 * * 1-5"
+    # Resumo diário às 20h BRT (23h UTC)
+    - cron: "0 23 * * *"
   workflow_dispatch:
     inputs:
-      send_summary:
-        description: 'Enviar apenas resumo diário'
+      mode:
+        description: 'Modo de execução'
+        required: true
+        default: 'normal'
+        type: choice
+        options:
+          - normal
+          - summary
+          - pauta
+      hours:
+        description: 'Horas para buscar (só modo normal)'
         required: false
-        default: 'false'
-        type: boolean
+        default: '8'
+        type: string
 
 concurrency:
   group: newsbot
@@ -22,7 +35,7 @@ permissions:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repo
@@ -32,7 +45,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip'  # Cache de dependências
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -42,16 +55,28 @@ jobs:
       - name: Determine run mode
         id: mode
         run: |
-          # Verifica se é horário do resumo diário (23h UTC = 20h BRT)
-          HOUR=$(date -u +%H)
-          MINUTE=$(date -u +%M)
-          
-          if [[ "${{ github.event.inputs.send_summary }}" == "true" ]]; then
-            echo "mode=summary" >> $GITHUB_OUTPUT
-          elif [[ "$HOUR" == "23" && "$MINUTE" -lt "15" ]]; then
-            echo "mode=summary" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+            echo "hours=${{ github.event.inputs.hours }}" >> $GITHUB_OUTPUT
+            echo "📌 Modo manual: ${{ github.event.inputs.mode }}"
           else
-            echo "mode=normal" >> $GITHUB_OUTPUT
+            HOUR=$(date -u +%H)
+            MINUTE=$(date -u +%M)
+            DAY=$(date -u +%u)  # 1-7 (seg-dom)
+            
+            # 23h UTC = resumo diário
+            if [[ "$HOUR" == "23" && "$MINUTE" -lt "15" ]]; then
+              echo "mode=summary" >> $GITHUB_OUTPUT
+              echo "📊 Horário do resumo diário"
+            # 10h UTC (7h BRT) em dias úteis = pauta da Câmara
+            elif [[ "$HOUR" == "10" && "$MINUTE" -lt "15" && "$DAY" -le "5" ]]; then
+              echo "mode=pauta" >> $GITHUB_OUTPUT
+              echo "🏛️ Horário da pauta da Câmara"
+            else
+              echo "mode=normal" >> $GITHUB_OUTPUT
+              echo "hours=8" >> $GITHUB_OUTPUT
+              echo "📰 Execução normal"
+            fi
           fi
 
       - name: Run bot (normal)
@@ -62,25 +87,37 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python telegram_news_bot.py --hours 8
+          python telegram_news_bot.py --hours ${{ steps.mode.outputs.hours }}
 
       - name: Run bot (daily summary)
+        id: summary
         if: steps.mode.outputs.mode == 'summary'
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python telegram_news_bot.py --summary
 
+      - name: Run bot (pauta Câmara)
+        id: pauta
+        if: steps.mode.outputs.mode == 'pauta'
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python telegram_news_bot.py --pauta
+
       - name: Notify failure
-        if: steps.bot.outcome == 'failure'
+        if: steps.bot.outcome == 'failure' || steps.summary.outcome == 'failure' || steps.pauta.outcome == 'failure'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
-            -d "text=⚠️ <b>Newsbot falhou!</b>%0A%0A🔗 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">Ver logs</a>" \
+            -d "text=⚠️ <b>Newsbot falhou!</b>%0A%0AMode: ${{ steps.mode.outputs.mode }}%0A🔗 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">Ver logs</a>" \
             -d "parse_mode=HTML" \
             -d "disable_web_page_preview=true"
 
@@ -92,7 +129,7 @@ jobs:
           git add sent_items.db historico_news.xlsx || true
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "✅ Nenhuma alteração"
             exit 0
           fi
 
@@ -100,5 +137,5 @@ jobs:
           git push
 
       - name: Fail job if bot failed
-        if: steps.bot.outcome == 'failure'
+        if: steps.bot.outcome == 'failure' || steps.summary.outcome == 'failure' || steps.pauta.outcome == 'failure'
         run: exit 1
