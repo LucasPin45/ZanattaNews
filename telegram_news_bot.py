@@ -77,10 +77,10 @@ MUST_HAVE_ANY = [
     # Governo Federal (NOVO)
     "lula", "haddad", "governo federal", "governo lula",
     "ministério da fazenda", "receita federal",
-    "ministério da justiça",
+    "ministério da justiça", "Macaé Evaristo",
 
     # SC / Mandato
-    "santa catarina", "sc", "julia zanatta", "zanatta",
+    "santa catarina", "julia zanatta", "zanatta", "Bolsonaro", "Jorginho Mello"
 ]
 
 BLOCKLIST = [
