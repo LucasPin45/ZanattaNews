@@ -247,8 +247,10 @@ def parse_published_dt(entry) -> datetime | None:
     return None
 
 
-def find_context(summary: str, keywords: list[str], context_chars: int, max_len: int) -> tuple[str, str]:
-    """Encontra contexto ao redor da keyword no texto."""
+def find_context(title: str, summary: str, keywords: list[str], context_chars: int, max_len: int) -> tuple[str, str]:
+    """Encontra contexto ao redor da keyword no texto (summary ou título)."""
+    
+    # Primeiro tenta no summary
     raw = normalize(summary)
     low = raw.lower()
 
@@ -269,6 +271,17 @@ def find_context(summary: str, keywords: list[str], context_chars: int, max_len:
             if len(ctx) > max_len:
                 ctx = ctx[:max_len] + "…"
             return kw, html.escape(ctx, quote=False).replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
+    
+    # Se não achou no summary, tenta no título
+    title_norm = normalize(title)
+    title_low = title_norm.lower()
+    
+    for kw in keywords:
+        k = kw.lower()
+        if k in title_low:
+            # Keyword está no título - retorna keyword e indica que está no título
+            return kw, "(ver título)"
+    
     return "", ""
 
 
@@ -386,7 +399,7 @@ def run(config: dict, hours_override: int | None = None, send_summary: bool = Fa
             if pub_dt and pub_dt < cutoff:
                 continue
 
-            kw, ctx = find_context(summary, keywords, context_chars, max_context_len)
+            kw, ctx = find_context(title, summary, keywords, context_chars, max_context_len)
             relevance = count_keywords(blob, keywords)
 
             items.append({
