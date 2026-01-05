@@ -1,5 +1,6 @@
 name: Telegram News Bot
 
+
 on:
   schedule:
     - cron: "*/15 * * * *"   # a cada 15 minutos (UTC)
@@ -51,3 +52,4 @@ jobs:
 
           git commit -m "chore: update newsbot state"
           git push
+
