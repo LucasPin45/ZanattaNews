@@ -1,3 +1,15 @@
-requests
-feedparser
-openpyxl
+# Telegram News Bot - Dependencies
+# ================================
+
+# HTTP requests com retry
+requests>=2.31.0
+urllib3>=2.0.0
+
+# RSS parsing
+feedparser>=6.0.10
+
+# Excel export
+openpyxl>=3.1.2
+
+# YAML config
+PyYAML>=6.0.1
