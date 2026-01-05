@@ -1,0 +1,111 @@
+# ============================================================
+# CONFIGURAÇÃO DO TELEGRAM NEWS BOT
+# Edite este arquivo para ajustar o bot sem mexer no código
+# ============================================================
+
+# Parâmetros gerais
+settings:
+  lookback_hours: 8           # Janela de busca (horas)
+  max_items_per_run: 20       # Máximo de notícias por execução
+  sleep_between_sends: 0.4    # Delay entre envios (segundos)
+  context_chars: 90           # Caracteres ao redor do gatilho
+  max_context_len: 240        # Tamanho máximo do contexto
+  similarity_threshold: 0.85  # Limiar para detectar títulos similares
+  parallel_workers: 8         # Threads para buscar feeds
+
+# Arquivos de dados
+files:
+  database: "sent_items.db"
+  history_xlsx: "historico_news.xlsx"
+
+# Resumo diário (opcional)
+daily_summary:
+  enabled: true
+  hour: 20  # Hora BRT para enviar resumo (20 = 20h)
+
+# Fontes RSS
+feeds:
+  # Institucional
+  - https://www12.senado.leg.br/noticias/feed
+  - https://www.camara.leg.br/rss/ultimas-noticias.xml
+
+  # G1
+  - https://g1.globo.com/rss/g1/politica/
+  - https://g1.globo.com/rss/g1/economia/
+  - https://g1.globo.com/rss/g1/brasil/
+
+  # Folha
+  - https://feeds.folha.uol.com.br/poder/rss091.xml
+  - https://feeds.folha.uol.com.br/mercado/rss091.xml
+
+  # Estadão
+  - https://politica.estadao.com.br/rss
+  - https://economia.estadao.com.br/rss
+
+  # CNN Brasil
+  - https://www.cnnbrasil.com.br/politica/feed/
+
+  # Metrópoles
+  - https://www.metropoles.com/feed
+
+  # BBC
+  - https://feeds.bbci.co.uk/portuguese/rss.xml
+
+  # Veja
+  - https://veja.abril.com.br/rss/
+
+# Palavras-chave (gatilhos) - notícia precisa conter pelo menos uma
+keywords:
+  # Congresso / Justiça
+  - câmara
+  - senado
+  - congresso
+  - plenário
+  - comissão
+  - stf
+  - tcu
+  - cgu
+  - pgr
+  - mpf
+
+  # Economia / tributos
+  - imposto
+  - imposto de renda
+  - irpf
+  - tribut
+  - orçamento
+  - ldo
+  - ploa
+  - gastos
+  - lrf
+  - inflação
+  - juros
+  - selic
+  - banco central
+  - pix
+
+  # Governo Federal
+  - lula
+  - haddad
+  - governo federal
+  - governo lula
+  - ministério da fazenda
+  - receita federal
+  - ministério da justiça
+  - Macaé Evaristo
+
+  # SC / Mandato
+  - santa catarina
+  - julia zanatta
+  - zanatta
+  - Bolsonaro
+  - Jorginho Mello
+
+# Palavras bloqueadas (notícia é ignorada se contiver)
+blocklist:
+  - horóscopo
+  - bbb
+  - fofoca
+  - celebridade
+  - reality
+  - novela
