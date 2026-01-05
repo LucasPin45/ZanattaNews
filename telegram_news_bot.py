@@ -1,28 +1,21 @@
 """
 telegram_news_bot.py
 
-Prioridade = a notícia (mais recente primeiro), independente da fonte.
-
-NOVO (REGRA ATUAL):
-- Contexto vem SEMPRE do RESUMO (summary)
-- Palavra-chave que disparou aparece:
-    • Identificada
-    • Destacada em negrito no contexto
-- Palavras-chave ampliadas (Governo Federal)
-
-Mantém:
-- RSS múltiplas fontes
-- Filtro MUST_HAVE_ANY + BLOCKLIST
-- Ordenação por recência
-- Deduplicação (SQLite)
-- Histórico em XLSX
-- GitHub Actions (15 min)
+Monitor Parlamentar Zanatta
+- Coleta notícias políticas/institucionais via RSS
+- Prioriza recência (notícia > fonte)
+- Envia para Telegram com:
+    • palavra-chave gatilho
+    • contexto (trecho do resumo)
+    • LINK COMPLETO (ideal para repasse no WhatsApp)
+- Não repete matérias
+- Histórico em SQLite + XLSX
+- GitHub Actions (cron 15 min)
 """
 
 import os
 import time
 import sqlite3
-import argparse
 import html
 from datetime import datetime, timezone, timedelta
 
@@ -31,46 +24,61 @@ import feedparser
 from openpyxl import Workbook, load_workbook
 
 
-# =========================
-# Telegram
-# =========================
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# ============================================================
+# TELEGRAM (via Secrets / variáveis de ambiente)
+# ============================================================
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# =========================
-# FONTES RSS
-# =========================
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    raise SystemExit("Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID nas variáveis de ambiente.")
+
+
+# ============================================================
+# FONTES RSS (política, economia, institucional)
+# ============================================================
 RSS_FEEDS = [
+    # Institucional
     "https://www12.senado.leg.br/noticias/feed",
     "https://www.camara.leg.br/rss/ultimas-noticias.xml",
 
+    # G1
     "https://g1.globo.com/rss/g1/politica/",
     "https://g1.globo.com/rss/g1/economia/",
     "https://g1.globo.com/rss/g1/brasil/",
 
+    # Folha
     "https://feeds.folha.uol.com.br/poder/rss091.xml",
     "https://feeds.folha.uol.com.br/mercado/rss091.xml",
 
+    # Estadão
     "https://politica.estadao.com.br/rss",
     "https://economia.estadao.com.br/rss",
 
+    # CNN Brasil
     "https://www.cnnbrasil.com.br/politica/feed/",
+
+    # Metrópoles
     "https://www.metropoles.com/feed",
 
+    # BBC
     "https://feeds.bbci.co.uk/portuguese/rss.xml",
+
+    # Veja
     "https://veja.abril.com.br/rss/",
 ]
 
-# =========================
-# PALAVRAS-CHAVE (GATILHO)
-# =========================
+
+# ============================================================
+# PALAVRAS-CHAVE (GATILHOS)
+# ============================================================
 MUST_HAVE_ANY = [
     # Congresso / Justiça
     "câmara", "senado", "congresso", "plenário", "comissão",
     "stf", "tcu", "cgu", "pgr", "mpf",
 
-    # Economia / Tributos
-    "imposto", "irpf", "imposto de renda", "tribut",
+    # Economia / tributos
+    "imposto", "imposto de renda", "irpf", "tribut",
     "orçamento", "ldo", "ploa", "gastos", "lrf",
     "inflação", "juros", "selic", "banco central", "pix",
 
@@ -87,75 +95,25 @@ BLOCKLIST = [
     "horóscopo", "bbb", "fofoca", "celebridade",
 ]
 
-BOOST = [
-    "câmara", "senado", "stf", "tcu",
-    "orçamento", "imposto", "irpf",
-    "lula", "haddad", "governo federal",
-    "zanatta", "santa catarina",
-]
 
-# =========================
+# ============================================================
 # PARÂMETROS
-# =========================
+# ============================================================
 LOOKBACK_HOURS = 8
 MAX_ITEMS_PER_RUN = 20
-SLEEP_BETWEEN_SENDS = 0.35
-BRT = timezone(timedelta(hours=-3))
+SLEEP_BETWEEN_SENDS = 0.4
 
-CONTEXT_CHARS = 80
-MAX_CONTEXT_LEN = 220
+BRT = timezone(timedelta(hours=-3))
+CONTEXT_CHARS = 90
+MAX_CONTEXT_LEN = 240
 
 DB_PATH = "sent_items.db"
 HIST_XLSX = "historico_news.xlsx"
 
 
-# =========================
-# UTILITÁRIOS
-# =========================
-def normalize(s: str) -> str:
-    return (s or "").strip()
-
-
-def blocked(text: str) -> bool:
-    return any(b in text for b in BLOCKLIST)
-
-
-def score_item(text: str) -> int:
-    return sum(2 for b in BOOST if b in text)
-
-
-def parse_published_dt(entry):
-    for attr in ("published_parsed", "updated_parsed"):
-        dt = getattr(entry, attr, None)
-        if dt:
-            return datetime(*dt[:6], tzinfo=timezone.utc)
-    return None
-
-
-def find_context_from_summary(summary: str):
-    s_raw = normalize(summary)
-    s = s_raw.lower()
-
-    for kw in MUST_HAVE_ANY:
-        k = kw.lower()
-        idx = s.find(k)
-        if idx != -1:
-            start = max(0, idx - CONTEXT_CHARS)
-            end = min(len(s_raw), idx + len(kw) + CONTEXT_CHARS)
-            ctx = s_raw[start:end]
-            return kw, ctx
-    return "", ""
-
-
-def highlight_keyword(ctx: str, kw: str) -> str:
-    if not kw:
-        return ctx
-    return ctx.replace(kw, f"<b>{kw}</b>")
-
-
-# =========================
-# BANCO (SQLite)
-# =========================
+# ============================================================
+# BANCO (deduplicação)
+# ============================================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -188,17 +146,21 @@ def mark_sent(item):
     cur.execute(
         "INSERT OR IGNORE INTO sent VALUES (?, ?, ?, ?, ?, ?)",
         (
-            item["id"], item["title"], item["link"], item["source"],
-            item["published_at"], datetime.now(timezone.utc).isoformat()
+            item["id"],
+            item["title"],
+            item["link"],
+            item["source"],
+            item["published_at"],
+            datetime.now(timezone.utc).isoformat(),
         )
     )
     conn.commit()
     conn.close()
 
 
-# =========================
-# XLSX
-# =========================
+# ============================================================
+# HISTÓRICO XLSX
+# ============================================================
 def init_xlsx():
     if os.path.exists(HIST_XLSX):
         return
@@ -207,7 +169,7 @@ def init_xlsx():
     ws.title = "Historico"
     ws.append([
         "Enviado_BRT", "Publicado_BRT", "Fonte",
-        "Titulo", "Link", "Score", "Keyword", "Contexto"
+        "Titulo", "Link", "Keyword", "Contexto"
     ])
     wb.save(HIST_XLSX)
 
@@ -219,72 +181,108 @@ def append_xlsx(row):
     wb.save(HIST_XLSX)
 
 
-# =========================
+# ============================================================
 # TELEGRAM
-# =========================
+# ============================================================
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    r = requests.post(url, json={
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": msg,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }, timeout=25)
+    r = requests.post(
+        url,
+        json={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": msg,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+        timeout=25,
+    )
     r.raise_for_status()
 
 
-# =========================
-# EXECUÇÃO
-# =========================
+# ============================================================
+# AUXILIARES
+# ============================================================
+def normalize(s):
+    return (s or "").strip()
+
+
+def parse_published_dt(entry):
+    if hasattr(entry, "published_parsed") and entry.published_parsed:
+        return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+    return None
+
+
+def find_context(summary):
+    raw = normalize(summary)
+    low = raw.lower()
+
+    for kw in MUST_HAVE_ANY:
+        k = kw.lower()
+        idx = low.find(k)
+        if idx != -1:
+            start = max(0, idx - CONTEXT_CHARS)
+            end = min(len(raw), idx + len(k) + CONTEXT_CHARS)
+            ctx = raw[start:end]
+            ctx = ctx.replace(kw, f"<b>{kw}</b>")
+            if len(ctx) > MAX_CONTEXT_LEN:
+                ctx = ctx[:MAX_CONTEXT_LEN] + "…"
+            return kw, html.escape(ctx, quote=False)
+    return "", ""
+
+
+# ============================================================
+# EXECUÇÃO PRINCIPAL
+# ============================================================
 def run():
     init_db()
     init_xlsx()
 
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=LOOKBACK_HOURS)
-
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     items = []
 
     for feed in RSS_FEEDS:
-        f = feedparser.parse(feed)
-        source = f.feed.title if hasattr(f.feed, "title") else feed
+        parsed = feedparser.parse(feed)
+        source = parsed.feed.title if hasattr(parsed.feed, "title") else feed
 
-        for e in f.entries[:120]:
-            title = normalize(e.title)
-            link = normalize(e.link)
+        for e in parsed.entries[:120]:
+            title = normalize(getattr(e, "title", ""))
+            link = normalize(getattr(e, "link", ""))
             summary = normalize(getattr(e, "summary", ""))
 
-            blob = f"{title}\n{summary}".lower()
+            if not title or not link:
+                continue
 
+            blob = f"{title}\n{summary}".lower()
             if not any(k in blob for k in MUST_HAVE_ANY):
                 continue
-            if blocked(blob):
+            if any(b in blob for b in BLOCKLIST):
                 continue
 
             pub_dt = parse_published_dt(e)
             if pub_dt and pub_dt < cutoff:
                 continue
 
-            kw, ctx = find_context_from_summary(summary)
-            ctx = highlight_keyword(html.escape(ctx), kw.lower())
+            kw, ctx = find_context(summary)
 
             items.append({
-                "id": e.get("id", link),
+                "id": getattr(e, "id", link),
                 "title": title,
                 "link": link,
                 "source": source,
                 "published_at": pub_dt.isoformat() if pub_dt else None,
                 "published_brt": pub_dt.astimezone(BRT).strftime("%d/%m %H:%M") if pub_dt else "",
-                "score": score_item(blob),
                 "kw": kw,
-                "ctx": ctx
+                "ctx": ctx,
             })
 
-    items.sort(key=lambda x: (x["published_at"] or "", x["score"]), reverse=True)
+    # Ordena por mais recente
+    items.sort(key=lambda x: x["published_at"] or "", reverse=True)
 
     sent = 0
     for it in items:
-        if sent >= MAX_ITEMS_PER_RUN or was_sent(it["id"]):
+        if sent >= MAX_ITEMS_PER_RUN:
+            break
+        if was_sent(it["id"]):
             continue
 
         msg = (
@@ -292,7 +290,7 @@ def run():
             f"🏷 <i>{html.escape(it['source'])} • {it['published_brt']} (BRT)</i>\n"
             f"🔎 <b>Gatilho:</b> <code>{html.escape(it['kw'])}</code>\n"
             f"🧾 <i>{it['ctx']}</i>\n"
-            f"🔗 <a href=\"{it['link']}\">Abrir</a>"
+            f"🔗 {it['link']}"
         )
 
         send_telegram(msg)
@@ -303,9 +301,8 @@ def run():
             it["source"],
             it["title"],
             it["link"],
-            it["score"],
             it["kw"],
-            it["ctx"]
+            it["ctx"],
         ])
 
         mark_sent(it)
