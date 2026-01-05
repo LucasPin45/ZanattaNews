@@ -1,10 +1,16 @@
 name: Telegram News Bot
 
-
 on:
   schedule:
-    - cron: "*/15 * * * *"   # a cada 15 minutos (UTC)
-  workflow_dispatch:        # botão manual
+    - cron: "*/15 * * * *"   # A cada 15 minutos (UTC)
+    - cron: "0 23 * * *"     # Resumo diário às 20h BRT (23h UTC)
+  workflow_dispatch:
+    inputs:
+      send_summary:
+        description: 'Enviar apenas resumo diário'
+        required: false
+        default: 'false'
+        type: boolean
 
 concurrency:
   group: newsbot
@@ -16,6 +22,7 @@ permissions:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repo
@@ -25,18 +32,57 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip'  # Cache de dependências
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run bot
+      - name: Determine run mode
+        id: mode
+        run: |
+          # Verifica se é horário do resumo diário (23h UTC = 20h BRT)
+          HOUR=$(date -u +%H)
+          MINUTE=$(date -u +%M)
+          
+          if [[ "${{ github.event.inputs.send_summary }}" == "true" ]]; then
+            echo "mode=summary" >> $GITHUB_OUTPUT
+          elif [[ "$HOUR" == "23" && "$MINUTE" -lt "15" ]]; then
+            echo "mode=summary" >> $GITHUB_OUTPUT
+          else
+            echo "mode=normal" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run bot (normal)
+        id: bot
+        if: steps.mode.outputs.mode == 'normal'
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python telegram_news_bot.py --hours 8
+
+      - name: Run bot (daily summary)
+        if: steps.mode.outputs.mode == 'summary'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python telegram_news_bot.py --summary
+
+      - name: Notify failure
+        if: steps.bot.outcome == 'failure'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=⚠️ <b>Newsbot falhou!</b>%0A%0A🔗 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">Ver logs</a>" \
+            -d "parse_mode=HTML" \
+            -d "disable_web_page_preview=true"
 
       - name: Commit state (db/xlsx)
         run: |
@@ -50,6 +96,9 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore: update newsbot state"
+          git commit -m "chore: update newsbot state [skip ci]"
           git push
 
+      - name: Fail job if bot failed
+        if: steps.bot.outcome == 'failure'
+        run: exit 1
