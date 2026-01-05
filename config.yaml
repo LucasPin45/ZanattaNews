@@ -66,9 +66,7 @@ google_alerts:
   enabled: true
   feeds:
     # Exemplo (substitua pelos seus):
-    # - https://www.google.com/alerts/feeds/SEU_ID/SEU_ALERT_ID
-    []
-
+    - https://www.google.com/alerts/feeds/02163880816356431405/5451495668239041575
 # ============================================================
 # PAUTA DA CÂMARA DOS DEPUTADOS
 # Busca eventos do plenário via API Dados Abertos
