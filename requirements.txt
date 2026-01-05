@@ -13,3 +13,7 @@ openpyxl>=3.1.2
 
 # YAML config
 PyYAML>=6.0.1
+
+# HTML parsing (para DOU)
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
