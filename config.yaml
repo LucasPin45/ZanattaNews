@@ -1,29 +1,31 @@
 # ============================================================
-# CONFIGURAÇÃO DO TELEGRAM NEWS BOT
-# Edite este arquivo para ajustar o bot sem mexer no código
+# CONFIGURAÇÃO DO TELEGRAM NEWS BOT - VERSÃO COMPLETA
+# Monitor Parlamentar Zanatta
 # ============================================================
 
 # Parâmetros gerais
 settings:
-  lookback_hours: 8           # Janela de busca (horas)
-  max_items_per_run: 20       # Máximo de notícias por execução
-  sleep_between_sends: 0.4    # Delay entre envios (segundos)
-  context_chars: 90           # Caracteres ao redor do gatilho
-  max_context_len: 240        # Tamanho máximo do contexto
-  similarity_threshold: 0.85  # Limiar para detectar títulos similares
-  parallel_workers: 8         # Threads para buscar feeds
+  lookback_hours: 8
+  max_items_per_run: 30
+  sleep_between_sends: 0.4
+  context_chars: 90
+  max_context_len: 240
+  similarity_threshold: 0.85
+  parallel_workers: 8
 
 # Arquivos de dados
 files:
   database: "sent_items.db"
   history_xlsx: "historico_news.xlsx"
 
-# Resumo diário (opcional)
+# Resumo diário
 daily_summary:
   enabled: true
-  hour: 20  # Hora BRT para enviar resumo (20 = 20h)
+  hour: 20
 
-# Fontes RSS
+# ============================================================
+# FONTES RSS - NOTÍCIAS
+# ============================================================
 feeds:
   # Institucional
   - https://www12.senado.leg.br/noticias/feed
@@ -54,8 +56,70 @@ feeds:
   # Veja
   - https://veja.abril.com.br/rss/
 
-# Palavras-chave (gatilhos) - notícia precisa conter pelo menos uma
+# ============================================================
+# GOOGLE ALERTS (RSS)
+# Instruções: Crie alertas em https://www.google.com/alerts
+# Configure "Entregar para" como "RSS Feed"
+# Copie a URL do RSS e cole aqui
+# ============================================================
+google_alerts:
+  enabled: true
+  feeds:
+    # Exemplo (substitua pelos seus):
+    # - https://www.google.com/alerts/feeds/SEU_ID/SEU_ALERT_ID
+    []
+
+# ============================================================
+# PAUTA DA CÂMARA DOS DEPUTADOS
+# Busca eventos do plenário via API Dados Abertos
+# ============================================================
+camara_pauta:
+  enabled: true
+  # Horário para enviar pauta do dia (BRT)
+  send_hour: 7
+  # Tipos de evento para monitorar
+  tipos_evento:
+    - "Sessão Deliberativa"
+    - "Sessão Não Deliberativa"
+    - "Sessão Solene"
+    - "Ordem do Dia"
+
+# ============================================================
+# DIÁRIO OFICIAL DA UNIÃO (DOU)
+# Busca publicações com palavras-chave específicas
+# ============================================================
+dou:
+  enabled: true
+  # Seções do DOU para buscar (1, 2, 3, e, 1a, 2a, 3a)
+  secoes:
+    - "1"   # Seção 1 - Leis, decretos, resoluções
+    - "2"   # Seção 2 - Atos de pessoal
+    - "3"   # Seção 3 - Contratos, avisos, editais
+  # Palavras-chave específicas para o DOU
+  keywords:
+    - armas
+    - CAC
+    - atirador
+    - colecionador
+    - caçador
+    - IRPF
+    - imposto de renda
+    - tribut
+    - imposto
+    - isenção
+    - alíquota
+
+# ============================================================
+# PALAVRAS-CHAVE GERAIS (para RSS e Google Alerts)
+# ============================================================
 keywords:
+  # Pessoas de interesse
+  - Julia Zanatta
+  - Zanatta
+  - Jair Bolsonaro
+  - Bolsonaro
+  - Jorginho Mello
+
   # Congresso / Justiça
   - câmara
   - senado
@@ -84,6 +148,13 @@ keywords:
   - banco central
   - pix
 
+  # Armas / CAC
+  - armas
+  - CAC
+  - atirador
+  - armamento
+  - munição
+
   # Governo Federal
   - lula
   - haddad
@@ -91,17 +162,11 @@ keywords:
   - governo lula
   - ministério da fazenda
   - receita federal
-  - ministério da justiça
-  - Macaé Evaristo
 
-  # SC / Mandato
+  # Santa Catarina
   - santa catarina
-  - julia zanatta
-  - zanatta
-  - Bolsonaro
-  - Jorginho Mello
 
-# Palavras bloqueadas (notícia é ignorada se contiver)
+# Palavras bloqueadas
 blocklist:
   - horóscopo
   - bbb
