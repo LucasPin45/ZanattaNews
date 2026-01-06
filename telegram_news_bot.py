@@ -108,23 +108,35 @@ SESSION = create_session()
 # BANCO DE DADOS
 # ============================================================
 def init_db(db_path: str):
-    """Inicializa banco SQLite com índices."""
+    """Inicializa banco SQLite com índices e faz migração se necessário."""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
+    
+    # Cria tabela se não existir
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sent (
             id TEXT PRIMARY KEY,
             title TEXT,
             link TEXT,
             source TEXT,
-            source_type TEXT,
             published_at TEXT,
             sent_at TEXT
         )
     """)
+    
+    # Migração: adiciona coluna source_type se não existir
+    cur.execute("PRAGMA table_info(sent)")
+    columns = [col[1] for col in cur.fetchall()]
+    
+    if "source_type" not in columns:
+        cur.execute("ALTER TABLE sent ADD COLUMN source_type TEXT DEFAULT 'rss'")
+        logger.info("Migração: coluna source_type adicionada ao banco")
+    
+    # Índices
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sent_published ON sent(published_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sent_sent_at ON sent(sent_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sent_source_type ON sent(source_type)")
+    
     conn.commit()
     conn.close()
 
