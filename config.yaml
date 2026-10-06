@@ -12,6 +12,10 @@ settings:
   max_context_len: 240
   similarity_threshold: 0.85
   parallel_workers: 8
+  # Registros mais antigos que isso são apagados do banco (mantém o arquivo pequeno)
+  keep_days: 90
+  # "completa" = formato atual | "whatsapp" = título em *negrito*, fonte/data e link
+  message_style: "completa"
 
 # Arquivos de dados
 files:
@@ -88,6 +92,11 @@ camara_pauta:
 # ============================================================
 dou:
   enabled: true
+  # Horários (BRT) em que a busca roda. O DOU publica poucas vezes por dia;
+  # buscar a cada 15 min só repete consulta. Remova esta linha para buscar sempre.
+  run_hours: [7, 9, 12, 16, 19]
+  # Avisa no Telegram (no máximo 1x por dia) se o DOU parar de responder/mudar de layout
+  alert_on_failure: true
   # Seções do DOU para buscar (1, 2, 3, e, 1a, 2a, 3a)
   secoes:
     - "1"   # Seção 1 - Leis, decretos, resoluções
@@ -108,7 +117,19 @@ dou:
     - alíquota
 
 # ============================================================
+# PALAVRAS-CHAVE PRIORITÁRIAS (para RSS e Google Alerts)
+# Aparecem primeiro, marcadas com 🚨, e NÃO contam no limite
+# max_items_per_run (nunca são cortadas por excesso de notícias).
+# ============================================================
+priority_keywords:
+  - Julia Zanatta
+  - Júlia Zanatta
+  - Zanatta
+
+# ============================================================
 # PALAVRAS-CHAVE GERAIS (para RSS e Google Alerts)
+# Casam como PALAVRA INTEIRA ("pix" não pega "pixel").
+# Para pegar variações, termine com * (ex.: "tribut*" = tributo, tributária...).
 # ============================================================
 keywords:
   # Pessoas de interesse
@@ -134,7 +155,7 @@ keywords:
   - imposto
   - imposto de renda
   - irpf
-  - tribut
+  - tribut*
   - orçamento
   - ldo
   - ploa
